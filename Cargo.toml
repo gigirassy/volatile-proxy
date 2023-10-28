@@ -1,0 +1,14 @@
+[package]
+name = "volatile-proxy"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arti = { version = "1.1.9", features = ["experimental-api"] }
+arti-client = { version = "0.10.2", features = ["experimental-api"] }
+futures = "0.3.29"
+tokio = { version = "1.33.0", features = ["full"] }
+# tor-circmgr = { version = "0.11.0", features = ["experimental-api"] }
+tor-rtcompat = "0.9.5"
