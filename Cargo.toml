@@ -6,9 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.75"
 arti = { version = "1.1.9", features = ["experimental-api"] }
 arti-client = { version = "0.10.2", features = ["experimental-api"] }
+arti-hyper = "0.10.3"
 futures = "0.3.29"
+hyper = { version = "0.14.27", features = ["client", "runtime", "http1"] }
+tls-api = "0.9.0"
+tls-api-native-tls = "0.9.0"
 tokio = { version = "1.33.0", features = ["full"] }
 # tor-circmgr = { version = "0.11.0", features = ["experimental-api"] }
 tor-rtcompat = "0.9.5"
