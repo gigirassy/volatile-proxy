@@ -62,7 +62,7 @@ async fn run<R: Runtime>(runtime: R) {
 
     let mut connections: Vec<JoinHandle<()>> = Default::default();
 
-    let listener = TcpListener::bind("127.0.0.1:9050").await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:9050").await.unwrap();
     while let Ok((mut ingress, _)) = listener.accept().await {
         let ready_proxies = ready_proxies.clone();
         connections.push(tokio::spawn(async move {
