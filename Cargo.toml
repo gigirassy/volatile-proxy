@@ -15,5 +15,4 @@ hyper = { version = "0.14.27", features = ["client", "runtime", "http1"] }
 tls-api = "0.9.0"
 tls-api-native-tls = "0.9.0"
 tokio = { version = "1.33.0", features = ["full"] }
-# tor-circmgr = { version = "0.11.0", features = ["experimental-api"] }
 tor-rtcompat = "0.9.5"

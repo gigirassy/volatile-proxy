@@ -1,8 +1,7 @@
 use std::{
-    net::SocketAddr,
     println,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering::SeqCst},
+        atomic::{AtomicBool, Ordering::SeqCst},
         Arc,
     },
     time::Duration,
@@ -17,6 +16,7 @@ use hyper::Body;
 use tls_api::{TlsConnector as TlsConnectorTrait, TlsConnectorBuilder};
 use tokio::{
     net::{TcpListener, TcpStream},
+    task::JoinHandle,
     time::sleep,
 };
 use tor_rtcompat::{BlockOn, Runtime};
@@ -27,7 +27,7 @@ use tls_api_native_tls::TlsConnector;
 #[cfg(target_vendor = "apple")]
 use tls_api_openssl::TlsConnector;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Proxy {
     ready: Arc<AtomicBool>,
     port: u16,
@@ -50,30 +50,30 @@ async fn run<R: Runtime>(runtime: R) {
 
     let mut ready_proxies: Vec<Proxy> = Default::default();
 
-    for i in 0..4 {
+    for i in 0..20 {
         let ready: Arc<AtomicBool> = Default::default();
         let port = 9051 + i;
         ready_proxies.push(Proxy {
             ready: ready.clone(),
             port: port,
         });
-        tokio::spawn(run_proxy(
-            runtime.clone(),
-            tor_client.isolated_client(),
-            ready,
-            port,
-        ));
+        tokio::spawn(run_proxy(runtime.clone(), tor_client.clone(), ready, port));
     }
+
+    let mut connections: Vec<JoinHandle<()>> = Default::default();
 
     let listener = TcpListener::bind("127.0.0.1:9050").await.unwrap();
     while let Ok((mut ingress, _)) = listener.accept().await {
-        ready_proxies
-            .iter()
-            .filter(|proxy| proxy.ready.load(SeqCst))
-            .for_each(|proxy| println!("{:#?}", proxy));
+        let ready_proxies = ready_proxies.clone();
+        connections.push(tokio::spawn(async move {
+            let proxy = ready_proxies
+                .into_iter()
+                .find(|proxy| proxy.ready.load(SeqCst));
 
-        tokio::spawn(async move {
-            let mut egress = TcpStream::connect("127.0.0.1:9051").await.unwrap();
+            let address = format!("127.0.0.1:{}", proxy.unwrap().port);
+            println!("Proxying connection through {}", address);
+
+            let mut egress = TcpStream::connect(address).await.unwrap();
             match tokio::io::copy_bidirectional(&mut ingress, &mut egress).await {
                 Ok((to_egress, to_ingress)) => {
                     println!(
@@ -85,8 +85,22 @@ async fn run<R: Runtime>(runtime: R) {
                     println!("Error while proxying: {}", err);
                 }
             }
-        });
+            println!("Done");
+        }));
     }
+
+    join_all(connections.into_iter()).await;
+}
+
+async fn check_valid<R: Runtime>(
+    http: hyper::Client<ArtiHttpConnector<R, TlsConnector>>,
+) -> Result<bool> {
+    // let url = "https://lite.duckduckgo.com/lite/?q=test";
+    let url = "https://httpstat.us/random/200,500";
+    let response = http.get(url.try_into()?).await?;
+    let status = response.status();
+
+    Ok(status == 200)
 }
 
 /// Run main proxy loop
@@ -96,21 +110,50 @@ async fn run_proxy<R: Runtime>(
     ready: Arc<AtomicBool>,
     socks_port: u16,
 ) -> Result<()> {
-    tor_client = tor_client.isolated_client();
+    let mut proxy = tokio::spawn(run_socks_proxy(
+        runtime.clone(),
+        tor_client.clone(),
+        socks_port,
+    ));
 
-    let tls_connector = TlsConnector::builder()?.build()?;
+    loop {
+        if ready.load(SeqCst) {
+            let tls_connector = TlsConnector::builder()?.build()?;
+            let tor_connector = ArtiHttpConnector::new(tor_client.clone(), tls_connector);
+            let http = hyper::Client::builder().build::<_, Body>(tor_connector);
 
-    let tor_connector = ArtiHttpConnector::new(tor_client.clone(), tls_connector);
-    let http = hyper::Client::builder().build::<_, Body>(tor_connector);
+            // println!("{} checking", socks_port);
 
-    let url = "https://httpstat.us/random/200,500-504";
-    println!("{} requesting {} via Tor...", socks_port, url);
-    let mut resp = http.get(url.try_into()?).await?;
+            if !check_valid(http).await? {
+                proxy.abort();
+                ready.store(false, SeqCst);
+                println!("{} is bad", socks_port);
+            } else {
+                sleep(Duration::from_secs(60 * 2)).await;
+            }
+        }
 
-    println!("{} status: {}", socks_port, resp.status());
-    ready.store(true, SeqCst);
+        if !ready.load(SeqCst) {
+            println!("Refreshing circuit");
+            tor_client = tor_client.isolated_client();
 
-    let proxy = tokio::spawn(run_socks_proxy(runtime, tor_client, socks_port));
+            let tls_connector = TlsConnector::builder()?.build()?;
+            let tor_connector = ArtiHttpConnector::new(tor_client.clone(), tls_connector);
+            let http = hyper::Client::builder().build::<_, Body>(tor_connector);
 
-    Ok(())
+            if check_valid(http).await? {
+                proxy = tokio::spawn(run_socks_proxy(
+                    runtime.clone(),
+                    tor_client.clone(),
+                    socks_port,
+                ));
+                ready.store(true, SeqCst);
+                println!("{} is good", socks_port);
+                sleep(Duration::from_secs(60 * 2)).await;
+            } else {
+                proxy.abort();
+                println!("{} is bad", socks_port);
+            }
+        }
+    }
 }
