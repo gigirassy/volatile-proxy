@@ -50,12 +50,12 @@ async fn run<R: Runtime>(runtime: R) {
 
     let mut ready_proxies: Vec<Proxy> = Default::default();
 
-    for i in 0..20 {
+    for i in 0..4 {
         let ready: Arc<AtomicBool> = Default::default();
         let port = 9051 + i;
         ready_proxies.push(Proxy {
             ready: ready.clone(),
-            port: port,
+            port,
         });
         tokio::spawn(run_proxy(runtime.clone(), tor_client.clone(), ready, port));
     }
@@ -95,8 +95,7 @@ async fn run<R: Runtime>(runtime: R) {
 async fn check_valid<R: Runtime>(
     http: hyper::Client<ArtiHttpConnector<R, TlsConnector>>,
 ) -> Result<bool> {
-    // let url = "https://lite.duckduckgo.com/lite/?q=test";
-    let url = "https://httpstat.us/random/200,500";
+    let url = "https://lite.duckduckgo.com/lite/?q=test";
     let response = http.get(url.try_into()?).await?;
     let status = response.status();
 
