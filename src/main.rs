@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicBool, Ordering::SeqCst},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::Result;
@@ -47,6 +47,9 @@ async fn run<R: Runtime>(runtime: R) {
         .bootstrap_behavior(arti_client::BootstrapBehavior::OnDemand)
         .create_unbootstrapped()
         .unwrap();
+    // let mut prefs = arti_client::StreamPrefs::default();
+    // prefs.exit_country(<tor_geoip::CountryCode as std::str::FromStr>::from_str("US").unwrap());
+    // tor_client.set_stream_prefs(prefs);
 
     let mut ready_proxies: Vec<Proxy> = Default::default();
 
@@ -70,22 +73,32 @@ async fn run<R: Runtime>(runtime: R) {
                 .into_iter()
                 .find(|proxy| proxy.ready.load(SeqCst));
 
-            let address = format!("127.0.0.1:{}", proxy.unwrap().port);
-            println!("Proxying connection through {}", address);
+            if proxy.is_none() {
+                println!("Recieved connection but no proxy is available");
+                return;
+            }
+            let proxy = proxy.unwrap();
+
+            let address = format!("127.0.0.1:{}", proxy.port);
+            println!("Proxying connection through {}", proxy.port);
 
             let mut egress = TcpStream::connect(address).await.unwrap();
-            match tokio::io::copy_bidirectional(&mut ingress, &mut egress).await {
-                Ok((to_egress, to_ingress)) => {
-                    println!(
+
+            _ = tokio::time::timeout(Duration::from_secs(30), async {
+                match tokio::io::copy_bidirectional(&mut ingress, &mut egress).await {
+                    Ok((to_egress, to_ingress)) => {
+                        println!(
                         "Connection ended gracefully ({} bytes from client, {} bytes from server)",
                         to_egress, to_ingress
                     );
+                    }
+                    Err(err) => {
+                        println!("Error while proxying: {}", err);
+                    }
                 }
-                Err(err) => {
-                    println!("Error while proxying: {}", err);
-                }
-            }
-            println!("Done");
+            })
+            .await;
+            println!("Timed out connection");
         }));
     }
 
@@ -96,10 +109,15 @@ async fn check_valid<R: Runtime>(
     http: hyper::Client<ArtiHttpConnector<R, TlsConnector>>,
 ) -> Result<bool> {
     let url = "https://lite.duckduckgo.com/lite/?q=test";
-    let response = http.get(url.try_into()?).await?;
-    let status = response.status();
 
-    Ok(status == 200)
+    let start_time = Instant::now();
+    let response = http.get(url.try_into()?).await?;
+    let end_time = Instant::now();
+
+    let duration = (end_time - start_time).as_millis();
+    // println!("{}", duration as f64 / 1000.);
+
+    Ok(duration <= 1000 * 5 && response.status() == 200)
 }
 
 /// Run main proxy loop
@@ -124,16 +142,15 @@ async fn run_proxy<R: Runtime>(
             // println!("{} checking", socks_port);
 
             if !check_valid(http).await? {
-                proxy.abort();
                 ready.store(false, SeqCst);
-                println!("{} is bad", socks_port);
+                println!("{} is down", socks_port);
             } else {
                 sleep(Duration::from_secs(60 * 2)).await;
             }
         }
 
         if !ready.load(SeqCst) {
-            println!("Refreshing circuit");
+            // println!("{} refreshing", socks_port);
             tor_client = tor_client.isolated_client();
 
             let tls_connector = TlsConnector::builder()?.build()?;
@@ -141,17 +158,18 @@ async fn run_proxy<R: Runtime>(
             let http = hyper::Client::builder().build::<_, Body>(tor_connector);
 
             if check_valid(http).await? {
+                proxy.abort();
                 proxy = tokio::spawn(run_socks_proxy(
                     runtime.clone(),
                     tor_client.clone(),
                     socks_port,
                 ));
                 ready.store(true, SeqCst);
-                println!("{} is good", socks_port);
+                println!("{} is up", socks_port);
                 sleep(Duration::from_secs(60 * 2)).await;
             } else {
                 proxy.abort();
-                println!("{} is bad", socks_port);
+                println!("{} is down", socks_port);
             }
         }
     }

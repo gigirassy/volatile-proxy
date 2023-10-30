@@ -190,6 +190,7 @@ dependencies = [
  "tor-config",
  "tor-dirmgr",
  "tor-error",
+ "tor-geoip",
  "tor-guardmgr",
  "tor-hsclient",
  "tor-hscrypto",
@@ -2326,6 +2327,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rangemap"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "977b1e897f9d764566891689e642653e5ed90c6895106acd005eb4c1d0203991"
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3419,6 +3426,7 @@ dependencies = [
  "tor-chanmgr",
  "tor-config",
  "tor-error",
+ "tor-geoip",
  "tor-guardmgr",
  "tor-hscrypto",
  "tor-linkspec",
@@ -3543,6 +3551,7 @@ dependencies = [
  "tor-consdiff",
  "tor-dirclient",
  "tor-error",
+ "tor-geoip",
  "tor-guardmgr",
  "tor-llcrypto",
  "tor-netdir",
@@ -3568,6 +3577,19 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "tor-geoip"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b43b00703b4283ca8457c09a8f385326b153022e916bfb6cb532513bf3797cb"
+dependencies = [
+ "derive_more",
+ "once_cell",
+ "rangemap",
+ "thiserror",
+ "tor-error",
 ]
 
 [[package]]
@@ -3780,6 +3802,7 @@ dependencies = [
  "tor-checkable",
  "tor-config",
  "tor-error",
+ "tor-geoip",
  "tor-hscrypto",
  "tor-linkspec",
  "tor-llcrypto",
@@ -4229,6 +4252,7 @@ dependencies = [
  "tls-api",
  "tls-api-native-tls",
  "tokio",
+ "tor-geoip",
  "tor-rtcompat",
 ]
 
