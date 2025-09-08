@@ -108,7 +108,7 @@ async fn run<R: Runtime>(runtime: R) {
 async fn check_valid<R: Runtime>(
     http: hyper::Client<ArtiHttpConnector<R, TlsConnector>>,
 ) -> Result<bool> {
-    let url = "https://lite.duckduckgo.com/lite/?q=test";
+    let url = "https://www.instagram.com/p/DJuw5fiRis4/";
 
     let start_time = Instant::now();
     let response = http.get(url.try_into()?).await?;
